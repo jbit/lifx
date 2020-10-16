@@ -42,6 +42,7 @@ struct BulbInfo {
     source: u32,
     target: u64,
     addr: SocketAddr,
+    timeout: Duration,
     name: RefreshableData<String>,
     model: RefreshableData<(u32, u32)>,
     location: RefreshableData<String>,
@@ -65,6 +66,7 @@ impl BulbInfo {
             source,
             target,
             addr,
+            timeout: Duration::from_secs(30),
             name: RefreshableData::empty(HOUR, Message::GetLabel),
             model: RefreshableData::empty(HOUR, Message::GetVersion),
             location: RefreshableData::empty(HOUR, Message::GetLocation),
@@ -73,6 +75,10 @@ impl BulbInfo {
             power_level: RefreshableData::empty(Duration::from_secs(15), Message::GetPower),
             color: Color::Unknown,
         }
+    }
+
+    fn online(&self) -> bool {
+        self.last_seen.elapsed() < self.timeout
     }
 
     fn update(&mut self, addr: SocketAddr) {
@@ -118,7 +124,9 @@ impl BulbInfo {
 impl std::fmt::Debug for BulbInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "BulbInfo({:0>16X} - {}  ", self.target, self.addr)?;
-
+        if !self.online() {
+            write!(f, "OFFLINE  ")?;
+        }
         if let Some(name) = self.name.as_ref() {
             write!(f, "{}", name)?;
         }
