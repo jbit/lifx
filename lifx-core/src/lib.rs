@@ -133,29 +133,50 @@ impl std::fmt::Debug for EchoPayload {
 pub struct LifxIdent(pub [u8; 16]);
 
 /// Lifx strings are fixed-length (32-bytes maximum)
-#[derive(Debug, Clone, PartialEq)]
-pub struct LifxString(pub String);
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct LifxString(pub [u8; 32]);
 
 impl LifxString {
     /// Constructs a new LifxString, truncating to 32 characters.
     pub fn new(s: &str) -> LifxString {
-        LifxString(if s.len() > 32 {
-            s[..32].to_owned()
+        let mut obj = LifxString::default();
+        let bytes = s.as_bytes();
+        if bytes.len() <= 32 {
+            obj.0[..bytes.len()].copy_from_slice(bytes);
         } else {
-            s.to_owned()
-        })
+            obj.0.copy_from_slice(&bytes[..32]);
+        }
+        obj
     }
 }
 
 impl std::fmt::Display for LifxString {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        write!(fmt, "{}", self.0)
+        match self.try_into() {
+            Ok::<&str, _>(s) => write!(fmt, "{}", s),
+            Err(s) => write!(fmt, "{}", s),
+        }
+    }
+}
+
+impl<'a> TryInto<&'a str> for &'a LifxString {
+    type Error = std::str::Utf8Error;
+    fn try_into(self) -> Result<&'a str, Self::Error> {
+        std::str::from_utf8(&self.0).map(|s| s.trim_end_matches('\0'))
+    }
+}
+
+impl Into<String> for LifxString {
+    fn into(self) -> String {
+        String::from_utf8_lossy(&self.0)
+            .trim_end_matches('\0')
+            .to_string()
     }
 }
 
 impl std::cmp::PartialEq<str> for LifxString {
     fn eq(&self, other: &str) -> bool {
-        self.0 == other
+        Ok(other) == self.try_into()
     }
 }
 
@@ -195,14 +216,7 @@ where
     T: WriteBytesExt,
 {
     fn write_val(&mut self, v: LifxString) -> Result<(), io::Error> {
-        for idx in 0..32 {
-            if idx >= v.0.len() {
-                self.write_u8(0)?;
-            } else {
-                self.write_u8(v.0.chars().nth(idx).unwrap() as u8)?;
-            }
-        }
-        Ok(())
+        self.write_all(&v.0)
     }
 }
 
@@ -322,14 +336,9 @@ impl<R: ReadBytesExt> LittleEndianReader<LifxIdent> for R {
 
 impl<R: ReadBytesExt> LittleEndianReader<LifxString> for R {
     fn read_val(&mut self) -> Result<LifxString, io::Error> {
-        let mut label = String::with_capacity(32);
-        for _ in 0..32 {
-            let c: u8 = self.read_val()?;
-            if c > 0 {
-                label.push(c as char);
-            }
-        }
-        Ok(LifxString(label))
+        let mut val = LifxString::default();
+        self.read_exact(&mut val.0)?;
+        Ok(val)
     }
 }
 
@@ -2002,5 +2011,27 @@ mod tests {
                 0xFF, 0xAC, 0x0D, 0x00, 0x04, 0x00, 0x00
             ]
         );
+    }
+
+    #[test]
+    fn test_lifx_string() {
+        assert_eq!(&LifxString::new(""), "");
+        assert_eq!(&LifxString::new("Test"), "Test");
+        assert_eq!(
+            &LifxString::new("TestTestTestTestTestTestTestTest"),
+            "TestTestTestTestTestTestTestTest"
+        );
+        assert_eq!(
+            &LifxString::new("TestTestTestTestTestTestTestTest0000"),
+            "TestTestTestTestTestTestTestTest"
+        );
+        assert_eq!(&LifxString::default(), "");
+        let mut value = LifxString::default();
+        value.0[..9].copy_from_slice(&[0xe3, 0x83, 0x86, 0xe3, 0x82, 0xb9, 0xe3, 0x83, 0x88]);
+        assert_eq!(&value, "テスト");
+        let value: Result<&str, _> = (&LifxString([0xff; 32])).try_into();
+        assert!(value.is_err());
+        let value: String = LifxString([0xff; 32]).into();
+        assert_eq!(value, "�".repeat(32).to_string());
     }
 }

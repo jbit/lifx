@@ -216,8 +216,8 @@ impl Manager {
                     println!("Unsupported service: {:?}/{}", service, port);
                 }
             }
-            Message::StateLabel { label } => bulb.name.update(label.0),
-            Message::StateLocation { label, .. } => bulb.location.update(label.0),
+            Message::StateLabel { label } => bulb.name.update(label.into()),
+            Message::StateLocation { label, .. } => bulb.location.update(label.into()),
             Message::StateVersion {
                 vendor, product, ..
             } => {
@@ -252,7 +252,7 @@ impl Manager {
                     d.update(color);
                     bulb.power_level.update(power);
                 }
-                bulb.name.update(label.0);
+                bulb.name.update(label.into());
             }
             Message::StateZone {
                 count,
