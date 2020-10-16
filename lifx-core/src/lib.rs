@@ -95,16 +95,19 @@ impl TryFrom<u8> for Waveform {
     }
 }
 
-impl TryFrom<u8> for Service {
-    type Error = Error;
-    fn try_from(val: u8) -> Result<Service, Error> {
-        if val != Service::UDP as u8 {
-            Err(Error::ProtocolError(format!(
-                "Unknown service value {}",
-                val
-            )))
-        } else {
-            Ok(Service::UDP)
+impl From<u8> for Service {
+    fn from(val: u8) -> Service {
+        match val {
+            1 => Service::UDP,
+            _ => Service::Unknown(val),
+        }
+    }
+}
+impl Into<u8> for Service {
+    fn into(self) -> u8 {
+        match self {
+            Service::UDP => 1,
+            Service::Unknown(val) => val,
         }
     }
 }
@@ -391,10 +394,10 @@ macro_rules! unpack {
 /// LIFX only documents the UDP service, though bulbs may support other undocumented services.
 /// Since these other services are unsupported by the lifx-core library, a message with a non-UDP
 /// service cannot be constructed.
-#[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Service {
-    UDP = 1,
+    UDP,
+    Unknown(u8),
 }
 
 #[repr(u16)]
@@ -1569,7 +1572,7 @@ impl RawMessage {
             }
             Message::StateService { port, service } => {
                 v.write_val(port)?;
-                v.write_val(service as u8)?;
+                v.write_u8(service.into())?;
             }
             Message::StateHostInfo {
                 signal,
